@@ -1,0 +1,202 @@
+---
+title: LabChart Data in R
+date: "Last compiled `r format(Sys.Date())`"
+always_allow_html: false
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+    keep_tex: true
+params:
+  verbose: TRUE
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r, include=F}
+if (params$verbose) {
+  knitr::opts_chunk$set(
+    echo = TRUE,
+    warning = TRUE,
+    message = FALSE
+  )
+} else {
+  knitr::opts_chunk$set(
+    echo = FALSE,
+    warning = FALSE,
+    message = FALSE
+  )
+}
+
+knitr::opts_chunk$set(fig.width=6, fig.height=3, 
+                      dpi=500, fig.align = 'center',
+                      fig.retina = 1)
+```
+
+
+```{r}
+library(tidyverse)
+library(here)
+library(signal)
+ggplot2::theme_set(theme_bw())
+```
+
+```{r}
+library(reticulate)
+use_miniconda("ali", required = T)
+
+adi <- import("adi")
+```
+
+## Demo - 15-minute summary timepoints
+
+### Load file, comments, and channels
+
+```{r}
+f <- adi$read_file(here::here("path/to/file.adicht"))
+
+comments <- adi$extract_comments(f)
+channels <- adi$extract_channels(f)
+```
+
+
+### Get results around comment
+
+```{r}
+# Assuming comments and channels have already been extracted
+
+# Get time at end of hemorrhage
+
+comment_tags <- c("end", "HS")
+channel_tags <- c("ABP", "VBP")
+
+comment_tags %>% paste0(collapse = '|') %>% 
+    str_detect(comments$text, pattern = .) %>% 
+    which() %>% 
+    slice(comments, .) %>% view()
+
+# Manually specify comment index
+results_comment <- adi$extract_comment_window(
+        f,
+        comment = comments %>% subset(id == 15) %>% dict(),
+        seconds_before = 10,
+        seconds_after = 15*60,
+        channel_ids = channels %>% subset(name %in% channel_tags) %>% .$id
+    )
+```
+
+### Plot
+
+```{r}
+results_comment$data %>% 
+    ggplot(aes(x = relative_time, y = ch1_ABP_mmHg)) +
+    geom_line(alpha = 0.2) +
+    geom_line(aes(y = ch1_ABP_mmHg %>% 
+                      signal::sgolayfilt(p = 3, n = 201)), 
+              color = "red") +
+    geom_vline(xintercept = 0) +
+    annotate("label", x = 0, y = -Inf, vjust = -0.2, 
+             label = results_comment$event) +
+    geom_text(data = comments, 
+              aes(x = datetime - subset(comments, id == 15)$datetime, 
+                  y = 10, label = text), angle = 45) +
+    labs(title = results_comment$event,
+         subtitle = bquote("t"[0] ~ "=" ~ .(format(results_comment$time[[1]] %>% as.POSIXct(tz = "UTC")))),
+         x = "Relative time (s)")
+```
+
+### Get windows
+
+```{r}
+options(digits.secs=4)
+comment <- comments %>% subset(id == 15)
+
+# Get the original time
+comment$datetime
+
+# Get the timepoint times
+interval = 1 * 60 * 60 # 1 hr * 3600 s/hr
+timepoints <- comment$datetime %>% 
+    adi$generate_timepoints(interval_s = 1*60*60, n = 3)
+
+# Get timepoint windows
+before = 0
+after = 15*60 # 15 min * 60 s/min
+timepoint_windows <- timepoints %>% map(adi$create_window, 
+                   seconds_before = before, 
+                   seconds_after = after)
+
+timepoint_windows
+```
+
+### Get results
+
+```{r}
+channel_tags <- c("ABP", "VBP")
+channel_ids <- channels %>% subset(name %in% channel_tags) %>% .$id
+
+results_windows <- timepoint_windows %>% 
+    map(
+        .f = ~ adi$extract_window(f = f, 
+                              window = .x, 
+                              channel_ids = channel_ids)
+    )
+
+results_df <- 
+    results_windows %>% 
+    map_dfr(~ .x$data, .id = "window_id")
+```
+
+### Plot combined
+
+```{r}
+results_df %>% 
+    ggplot(aes(x = datetime, y = ch1_ABP_mmHg, group = window_id)) +
+    geom_line(alpha = 0.2) +
+    geom_line(aes(y = ch1_ABP_mmHg %>% signal::sgolayfilt(p = 3, n = 201)), color = "red") +
+    labs(title = results_comment$event,
+         subtitle = "1 hr timepoints",
+         x = "datetime (t-4 hrs, to be corrected)")
+```
+
+### Plot overlay
+
+```{r}
+results_df %>% 
+    ggplot(aes(x = relative_time, y = ch1_ABP_mmHg, group = window_id)) +
+    geom_line(alpha = 0.2) +
+    geom_line(aes(y = ch1_ABP_mmHg %>% signal::sgolayfilt(p = 3, n = 201), color = window_id)) +
+    labs(title = results_comment$event,
+         subtitle = "1 hr timepoints",
+         x = "Relative time for each timepoint window (s)")
+```
+
+### Summary
+
+```{r}
+results_df %>% 
+    group_by(window_id) %>% 
+    summarize(
+        abp = mean(ch1_ABP_mmHg),
+        vbp = mean(ch2_VBP_mmHg)
+    )
+
+results_df %>% 
+    group_by(window_id) %>% 
+    summarize(
+        abp = mean(ch1_ABP_mmHg),
+        vbp = mean(ch2_VBP_mmHg)
+    ) %>% 
+    ggplot(aes(x = window_id, y = abp, group = NA)) +
+    geom_point() +
+    geom_line() +
+    scale_x_discrete(
+        labels = c("End of hemorrhage", "1 hr", "2 hr", "3 hr")
+    ) +
+    labs(x = "Timepoint", y = "ABP")
+```
+
