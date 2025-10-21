@@ -1,5 +1,17 @@
 # adinstruments_sdk_python
 
+**Note:**  
+This is a fork of Jim Hokanson's Python interface. The core functionality remains unchanged, but this repo includes a few convenience functions:
+
+- Load all comment info into a dataframe
+- Load all channel info into a dataframe
+- Extract raw data around a comment or time
+
+All modifications are collected in `adi/utils.py`, with docstrings.
+Examples are included for [R](https://github.com/irw-jh/adinstruments_sdk_python/blob/main/examples/example.Rmd) and [Python](https://github.com/irw-jh/adinstruments_sdk_python/blob/main/examples/example.py).
+
+_Original_
+
 Use this code to read .adicht (Labchart) files into Python. Interfacing with the ADIstruments DLL is done via [cffi](https://cffi.readthedocs.io/en/latest/).
 
 - The code utilizes the SDK from ADIstruments to read files in Python as NumPy arrays.
@@ -11,11 +23,19 @@ Use this code to read .adicht (Labchart) files into Python. Interfacing with the
 
 ## Installation ##
 
-	pip install adi-reader
+This version is currently not available on PyPI. Please clone and install locally with `pip`.
+
+```
+git clone https://github.com/irw-jh/adinstruments_sdk_python
+cd adinstruments_sdk_python
+pip install .
+```
 
 ----
 
 ## Test code ##
+
+See examples for more processing, like finding and accessing channels based on name.
 
 ```python
     import adi
