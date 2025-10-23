@@ -546,14 +546,15 @@ def _extract_data(f, records_info, basis_time, channel_ids=None):
         for channel_id in channel_ids:
             channel_id = int(channel_id)
             try:
-                data = f.channels[channel_id].get_data(
+                channel = f.channels[channel_id - 1]
+                data = channel.get_data(
                     record_id = record['record_id'], 
                     start_sample = record['start_sample'], 
                     stop_sample = record['end_sample']
                     )
                 
-                # Get channel name if available
-                channel = f.channels[channel_id - 1]
+                # Get channel name and units if available
+                # LabChart records also use 1-based indexing
                 channel_name = f"ch{channel_id}_{channel.name}_{channel.units[record['record_id']-1]}" if channel.name else f"ch{channel_id}"
                 
                 segment_data[channel_name] = data
